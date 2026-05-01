@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IoT Estoque</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet" />
+  <style>
+    /* ── Reset & Vars ────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0a0a0f;
+      --surface:   #111118;
+      --border:    #1e1e2e;
+      --accent:    #00ff94;
+      --accent2:   #ff6b35;
+      --muted:     #3a3a52;
+      --text:      #e8e8f0;
+      --text-dim:  #6b6b8a;
+      --entrada:   #00ff94;
+      --saida:     #ff6b35;
+      --font-mono: 'Space Mono', monospace;
+      --font-sans: 'Syne', sans-serif;
+      --radius:    4px;
+      --glow:      0 0 20px rgba(0,255,148,0.15);
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── Grid noise texture overlay ─────────────────────── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        repeating-linear-gradient(0deg, transparent, transparent 40px, rgba(255,255,255,0.015) 40px, rgba(255,255,255,0.015) 41px),
+        repeating-linear-gradient(90deg, transparent, transparent 40px, rgba(255,255,255,0.015) 40px, rgba(255,255,255,0.015) 41px);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ── Header ──────────────────────────────────────────── */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(10,10,15,0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 2rem;
+      height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .logo-icon {
+      width: 32px;
+      height: 32px;
+      border: 2px solid var(--accent);
+      border-radius: var(--radius);
+      display: grid;
+      place-items: center;
+      box-shadow: var(--glow);
+    }
+
+    .logo-icon svg { width: 18px; height: 18px; }
+
+    .logo-text {
+      font-family: var(--font-sans);
+      font-weight: 800;
+      font-size: 1.1rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .logo-text span { color: var(--accent); }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .status-dot {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: background 0.3s;
+    }
+
+    .dot.online { background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: pulse 2s infinite; }
+    .dot.offline { background: var(--saida); }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .btn-refresh {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      padding: 0.4rem 0.9rem;
+      border-radius: var(--radius);
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .btn-refresh:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+      box-shadow: var(--glow);
+    }
+
+    .btn-refresh.loading svg { animation: spin 0.8s linear infinite; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Main layout ─────────────────────────────────────── */
+    main {
+      position: relative;
+      z-index: 1;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 2.5rem 2rem;
+    }
+
+    /* ── Stats bar ───────────────────────────────────────── */
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2.5rem;
+    }
+
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem 1.5rem;
+      position: relative;
+      overflow: hidden;
+      transition: border-color 0.2s, transform 0.2s;
+    }
+
+    .stat-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0;
+      width: 3px; height: 100%;
+    }
+
+    .stat-card.green::before { background: var(--entrada); }
+    .stat-card.orange::before { background: var(--saida); }
+    .stat-card.blue::before { background: #4d9eff; }
+    .stat-card.purple::before { background: #a855f7; }
+
+    .stat-card:hover { transform: translateY(-2px); border-color: var(--muted); }
+
+    .stat-label {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--text-dim);
+      margin-bottom: 0.5rem;
+    }
+
+    .stat-value {
+      font-family: var(--font-mono);
+      font-size: 1.8rem;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .stat-card.green .stat-value { color: var(--entrada); }
+    .stat-card.orange .stat-value { color: var(--saida); }
+    .stat-card.blue .stat-value { color: #4d9eff; }
+    .stat-card.purple .stat-value { color: #a855f7; }
+
+    /* ── Section header ──────────────────────────────────── */
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1.25rem;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .section-title {
+      font-family: var(--font-sans);
+      font-weight: 800;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.15em;
+      color: var(--text-dim);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .section-title::before {
+      content: '';
+      display: block;
+      width: 20px;
+      height: 2px;
+      background: var(--accent);
+    }
+
+    .filter-bar {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    .filter-btn {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      padding: 0.35rem 0.8rem;
+      border-radius: 999px;
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .filter-btn:hover, .filter-btn.active {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: rgba(0,255,148,0.06);
+    }
+
+    .filter-btn.active-saida {
+      border-color: var(--saida);
+      color: var(--saida);
+      background: rgba(255,107,53,0.06);
+    }
+
+    /* ── Table ───────────────────────────────────────────── */
+    .table-wrap {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    thead {
+      background: rgba(30,30,46,0.8);
+      border-bottom: 1px solid var(--border);
+    }
+
+    th {
+      font-family: var(--font-mono);
+      font-size: 0.62rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--text-dim);
+      padding: 0.85rem 1.25rem;
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    tbody tr {
+      border-bottom: 1px solid rgba(30,30,46,0.6);
+      transition: background 0.15s;
+      animation: rowIn 0.3s ease both;
+    }
+
+    @keyframes rowIn {
+      from { opacity: 0; transform: translateX(-8px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+
+    tbody tr:hover { background: rgba(255,255,255,0.025); }
+    tbody tr:last-child { border-bottom: none; }
+
+    td {
+      padding: 1rem 1.25rem;
+      font-size: 0.88rem;
+      vertical-align: middle;
+    }
+
+    .td-id {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      color: var(--text-dim);
+    }
+
+    .td-funcionario {
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    .avatar {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      font-size: 0.65rem;
+      font-weight: 700;
+      font-family: var(--font-mono);
+      flex-shrink: 0;
+      background: var(--border);
+      color: var(--text-dim);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      padding: 0.25rem 0.65rem;
+      border-radius: 999px;
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .badge.entrada {
+      background: rgba(0,255,148,0.1);
+      color: var(--entrada);
+      border: 1px solid rgba(0,255,148,0.25);
+    }
+
+    .badge.saida {
+      background: rgba(255,107,53,0.1);
+      color: var(--saida);
+      border: 1px solid rgba(255,107,53,0.25);
+    }
+
+    .badge-dot {
+      width: 5px; height: 5px;
+      border-radius: 50%;
+    }
+
+    .badge.entrada .badge-dot { background: var(--entrada); }
+    .badge.saida   .badge-dot { background: var(--saida); }
+
+    .td-produto { font-weight: 600; }
+    .td-produto small {
+      display: block;
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      color: var(--text-dim);
+      font-weight: 400;
+      margin-top: 2px;
+    }
+
+    .td-qtd {
+      font-family: var(--font-mono);
+      font-size: 1rem;
+      font-weight: 700;
+    }
+
+    .td-data {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--text-dim);
+      white-space: nowrap;
+    }
+
+    .td-data span {
+      display: block;
+      color: var(--text);
+      font-size: 0.78rem;
+    }
+
+    /* ── Empty state ─────────────────────────────────────── */
+    .empty {
+      padding: 4rem 2rem;
+      text-align: center;
+      color: var(--text-dim);
+    }
+
+    .empty-icon {
+      font-size: 2.5rem;
+      margin-bottom: 1rem;
+      opacity: 0.3;
+    }
+
+    .empty h3 {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 0.5rem;
+    }
+
+    .empty p { font-size: 0.85rem; }
+
+    /* ── Toast ───────────────────────────────────────────── */
+    #toast {
+      position: fixed;
+      bottom: 2rem;
+      right: 2rem;
+      background: var(--surface);
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      padding: 0.75rem 1.25rem;
+      border-radius: var(--radius);
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      box-shadow: var(--glow);
+      transform: translateY(120%);
+      transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+      z-index: 999;
+      pointer-events: none;
+    }
+
+    #toast.show { transform: translateY(0); }
+
+    /* ── Scrollbar ───────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--muted); border-radius: 3px; }
+
+    /* ── Responsive ──────────────────────────────────────── */
+    @media (max-width: 768px) {
+      header { padding: 0 1rem; }
+      main { padding: 1.5rem 1rem; }
+
+      .logo-text { font-size: 0.95rem; }
+
+      th:nth-child(1),
+      td:nth-child(1) { display: none; }
+
+      th:nth-child(5),
+      td:nth-child(5) { display: none; }
+
+      td { padding: 0.75rem 0.85rem; }
+      th { padding: 0.75rem 0.85rem; }
+    }
+
+    @media (max-width: 480px) {
+      .stats { grid-template-columns: 1fr 1fr; }
+
+      th:nth-child(3),
+      td:nth-child(3) { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ─────────────────────────────────────────────── -->
+<header>
+  <div class="logo">
+    <div class="logo-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#00ff94" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/>
+        <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
+      </svg>
+    </div>
+    <span class="logo-text">IoT<span>Estoque</span></span>
+  </div>
+
+  <div class="header-right">
+    <div class="status-dot">
+      <div class="dot" id="statusDot"></div>
+      <span id="statusText">Verificando...</span>
+    </div>
+    <button class="btn-refresh" id="btnRefresh" onclick="carregarDados()">
+      <svg id="refreshIcon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
+        <path d="M21 3v5h-5"/>
+        <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
+        <path d="M8 16H3v5"/>
+      </svg>
+      Atualizar
+    </button>
+  </div>
+</header>
+
+<!-- ── Main ───────────────────────────────────────────────── -->
+<main>
+
+  <!-- Stats -->
+  <div class="stats">
+    <div class="stat-card green">
+      <div class="stat-label">Entradas</div>
+      <div class="stat-value" id="statEntradas">—</div>
+    </div>
+    <div class="stat-card orange">
+      <div class="stat-label">Saídas</div>
+      <div class="stat-value" id="statSaidas">—</div>
+    </div>
+    <div class="stat-card blue">
+      <div class="stat-label">Total Movim.</div>
+      <div class="stat-value" id="statTotal">—</div>
+    </div>
+    <div class="stat-card purple">
+      <div class="stat-label">Funcionários</div>
+      <div class="stat-value" id="statFuncionarios">—</div>
+    </div>
+  </div>
+
+  <!-- Table header -->
+  <div class="section-header">
+    <div class="section-title">Histórico de Movimentações</div>
+    <div class="filter-bar">
+      <button class="filter-btn active" id="filtroTodos"    onclick="setFiltro('todos')">Todos</button>
+      <button class="filter-btn"        id="filtroEntrada"  onclick="setFiltro('entrada')">Entradas</button>
+      <button class="filter-btn"        id="filtroSaida"    onclick="setFiltro('saida')">Saídas</button>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Funcionário</th>
+          <th>Ação</th>
+          <th>Produto</th>
+          <th>Qtd</th>
+          <th>Data / Hora</th>
+        </tr>
+      </thead>
+      <tbody id="tbody">
+        <tr>
+          <td colspan="6">
+            <div class="empty">
+              <div class="empty-icon">⟳</div>
+              <h3>Carregando...</h3>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+</main>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<script>
+  // ── Config ──────────────────────────────────────────────
+  // Troque pelo endereço da sua API (ngrok ou IP local)
+  const API_BASE = 'http://127.0.0.1:8000';
+
+  let todosRegistros = [];
+  let filtroAtual    = 'todos';
+  let autoRefresh    = null;
+
+  // ── Inicialização ────────────────────────────────────────
+  carregarDados();
+  autoRefresh = setInterval(carregarDados, 5000); // atualiza a cada 5s
+
+  // ── Carrega dados da API ─────────────────────────────────
+  async function carregarDados() {
+    const btn  = document.getElementById('btnRefresh');
+    const icon = document.getElementById('refreshIcon');
+    btn.classList.add('loading');
+
+    try {
+      const [movRes, statusRes] = await Promise.all([
+        fetch(`${API_BASE}/movimentacoes`),
+        fetch(`${API_BASE}/status`),
+      ]);
+
+      if (!movRes.ok) throw new Error('Erro na API');
+
+      todosRegistros = await movRes.json();
+      const status   = await statusRes.json();
+
+      atualizarStatus(true);
+      atualizarStats(todosRegistros);
+      renderTabela(todosRegistros, filtroAtual);
+
+    } catch (err) {
+      atualizarStatus(false);
+      console.error(err);
+    } finally {
+      btn.classList.remove('loading');
+    }
+  }
+
+  // ── Status online/offline ────────────────────────────────
+  function atualizarStatus(online) {
+    const dot  = document.getElementById('statusDot');
+    const text = document.getElementById('statusText');
+    dot.className  = 'dot ' + (online ? 'online' : 'offline');
+    text.textContent = online ? 'API Online' : 'API Offline';
+  }
+
+  // ── Atualiza cards de stats ──────────────────────────────
+  function atualizarStats(registros) {
+    const entradas     = registros.filter(r => r.acao === 'entrada').length;
+    const saidas       = registros.filter(r => r.acao === 'saida').length;
+    const funcionarios = new Set(registros.map(r => r.funcionario_id)).size;
+
+    animarNumero('statEntradas',    entradas);
+    animarNumero('statSaidas',      saidas);
+    animarNumero('statTotal',       registros.length);
+    animarNumero('statFuncionarios', funcionarios);
+  }
+
+  function animarNumero(id, valor) {
+    const el  = document.getElementById(id);
+    const ini = parseInt(el.textContent) || 0;
+    const dur = 400;
+    const ini_t = performance.now();
+    function step(now) {
+      const t = Math.min((now - ini_t) / dur, 1);
+      el.textContent = Math.round(ini + (valor - ini) * t);
+      if (t < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
+  // ── Filtro ───────────────────────────────────────────────
+  function setFiltro(f) {
+    filtroAtual = f;
+    document.querySelectorAll('.filter-btn').forEach(b => {
+      b.classList.remove('active', 'active-saida');
+    });
+    const btn = document.getElementById(
+      f === 'todos' ? 'filtroTodos' : f === 'entrada' ? 'filtroEntrada' : 'filtroSaida'
+    );
+    btn.classList.add(f === 'saida' ? 'active-saida' : 'active');
+    renderTabela(todosRegistros, f);
+  }
+
+  // ── Renderiza tabela ─────────────────────────────────────
+  function renderTabela(registros, filtro) {
+    const tbody = document.getElementById('tbody');
+    const dados = filtro === 'todos'
+      ? registros
+      : registros.filter(r => r.acao === filtro);
+
+    if (dados.length === 0) {
+      tbody.innerHTML = `
+        <tr><td colspan="6">
+          <div class="empty">
+            <div class="empty-icon">◎</div>
+            <h3>Nenhum registro</h3>
+            <p>Aguardando movimentações do ESP32...</p>
+          </div>
+        </td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = dados.map((r, i) => {
+      const dt       = new Date(r.data_hora);
+      const data     = dt.toLocaleDateString('pt-BR');
+      const hora     = dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const initials = r.funcionario_nome.split(' ').map(n => n[0]).join('').slice(0,2).toUpperCase();
+
+      return `
+        <tr style="animation-delay:${i * 30}ms">
+          <td class="td-id">#${String(r.id).padStart(4,'0')}</td>
+          <td>
+            <div class="td-funcionario">
+              <div class="avatar">${initials}</div>
+              ${r.funcionario_nome}
+            </div>
+          </td>
+          <td>
+            <span class="badge ${r.acao}">
+              <span class="badge-dot"></span>
+              ${r.acao === 'entrada' ? 'Entrada' : 'Saída'}
+            </span>
+          </td>
+          <td class="td-produto">
+            ${r.produto_nome}
+            <small>ID ${r.produto_id} · ${r.produto_unidade}</small>
+          </td>
+          <td class="td-qtd" style="color:${r.acao==='entrada'?'var(--entrada)':'var(--saida)'}">
+            ${r.quantidade}
+          </td>
+          <td class="td-data">
+            <span>${hora}</span>${data}
+          </td>
+        </tr>`;
+    }).join('');
+  }
+
+  // ── Toast ────────────────────────────────────────────────
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2500);
+  }
+
+  // Notifica quando chega nova movimentação
+  let ultimoId = null;
+  setInterval(async () => {
+    if (todosRegistros.length === 0) return;
+    const novoId = todosRegistros[0]?.id;
+    if (ultimoId !== null && novoId !== ultimoId) {
+      showToast(`↗ Nova movimentação registrada`);
+    }
+    ultimoId = novoId;
+  }, 5000);
+</script>
+</body>
+</html>

@@ -1,0 +1,24 @@
+[
+  {
+    "id": 1,
+    "funcionario_id": 4,
+    "funcionario_nome": "Diego Nunes",
+    "acao": "saida",
+    "produto_id": 4,
+    "produto_nome": "Tinta Látex",
+    "produto_unidade": "lts",
+    "quantidade": 78,
+    "data_hora": "2026-05-01T20:11:35"
+  },
+  {
+    "id": 2,
+    "funcionario_id": 1,
+    "funcionario_nome": "Ana Lima",
+    "acao": "entrada",
+    "produto_id": 7,
+    "produto_nome": "Fio Terra 2.5",
+    "produto_unidade": "mts",
+    "quantidade": 6,
+    "data_hora": "2026-05-01T20:18:02"
+  }
+]
